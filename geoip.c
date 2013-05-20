@@ -21,8 +21,8 @@
 #define FALLBACK_COUNTRY "A6"
 
 /* HTTP Header will be json-like */
-#define HEADER_MAXLEN 255
-#define HEADER_TMPL "city:%s, country:%s, lat:%f, lon:%f, ip:%s"
+#define HEADER_MAXLEN 512
+#define HEADER_TMPL "{'countryCode':'%s','countryCode3':'%s','countryName':'%s','region':'%s','city':'%s','postalCode':'%s','lat':'%f','lon':'%f','metroCode':'%i','areaCode':'%i','continentCode':'%s','ip':'%s'}"
 
 pthread_mutex_t geoip_mutex = PTHREAD_MUTEX_INITIALIZER;
 GeoIP* gi;
@@ -31,7 +31,8 @@ GeoIPRecord *record;
 /* Init GeoIP code */
 void geoip_init () {
     if (!gi) {
-        gi = GeoIP_open_type(GEOIP_CITY_EDITION_REV1,GEOIP_MEMORY_CACHE);
+        /*gi = GeoIP_open_type(GEOIP_CITY_EDITION_REV1,GEOIP_MEMORY_CACHE);*/
+    	gi = GeoIP_open("/etc/varnish/geoip/GeoLiteCity.dat",GEOIP_MEMORY_CACHE);
         assert(gi);
     }
 }
@@ -45,27 +46,44 @@ static int geoip_lookup(vcl_string *ip, vcl_string *resolved) {
         geoip_init();
     }
 
+    if(strncmp(ip,"127.0.0.1", 10) == 0) ip = "89.123.22.12";
+
     record = GeoIP_record_by_addr(gi, ip);
 
     /* Lookup succeeded */
     if (record) {
         lookup_success = 1;
         snprintf(resolved, HEADER_MAXLEN, HEADER_TMPL,
-            record->city,
             record->country_code,
+            record->country_code3,
+            record->country_name,
+            record->region,
+            record->city,
+            record->postal_code,
             record->latitude,
             record->longitude,
+            record->metro_code,
+            record->area_code,
+            record->continent_code,
             ip
+
         );
     }
 
     /* Failed lookup */
     else {
         snprintf(resolved, HEADER_MAXLEN, HEADER_TMPL,
-            "",      /* City */
             FALLBACK_COUNTRY,
+            "",
+            "",
+            "",
+            "",      /* City */
+            "",
             0.0f,    /* Latitude */
             0.0f,    /* Longitude */
+            0,
+            0,
+            "",
             ip
         );
     }
@@ -105,7 +123,7 @@ void vcl_geoip_send_synthetic(const struct sess *sp) {
         VRT_synth_page(sp, 0, hval, vrt_magic_string_end);
     }
     else {
-        VRT_synth_page(sp, 0, "", vrt_magic_string_end);
+        VRT_synth_page(sp, 0, "{failed:true}", vrt_magic_string_end);
     }
 }
 
@@ -118,7 +136,7 @@ void vcl_geoip_set_header(const struct sess *sp) {
     }
     else {
         /* Send an empty header */
-        VRT_SetHdr(sp, HDR_REQ, "\011X-Geo-IP:", "", vrt_magic_string_end);
+        VRT_SetHdr(sp, HDR_REQ, "\011X-Geo-IP:", "{failed:true}", vrt_magic_string_end);
     }
 }
 
@@ -138,8 +156,8 @@ void vcl_geoip_country_set_header_xff(const struct sess *sp) {
         geoip_lookup_country(ip, hval);
         VRT_SetHdr(sp, HDR_REQ, "\011X-Geo-IP:", hval, vrt_magic_string_end);
     } else {
-        VCL_Log("geoip: no ip from X-Forwarded-For");
-        VRT_SetHdr(sp, HDR_REQ, "\011X-Geo-IP:", "", vrt_magic_string_end);
+        /* VCL_Log("geoip: no ip from X-Forwarded-For"); */
+        VRT_SetHdr(sp, HDR_REQ, "\011X-Geo-IP:", "{failed:true}", vrt_magic_string_end);
     }
 }
 #else
