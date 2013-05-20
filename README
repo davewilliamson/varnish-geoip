@@ -1,6 +1,8 @@
 Varnish Geo-IP VCL
 ===========================
 
+DOESN'T APPEAR TO WORK WITH LATEST VERSION OF VARNISH, WILL TRY TO FIX!!!
+
 Last updated: 1/12/2011
 	Cosimo Streppone <cosimo@opera.com>
 	Opera Software ASA
